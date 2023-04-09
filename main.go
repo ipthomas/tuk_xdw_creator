@@ -37,16 +37,35 @@ func Handle_Request(req events.APIGatewayProxyRequest) (*events.APIGatewayProxyR
 	}
 
 	log.Printf("Processing API Gateway %s Request Path %s", req.HTTPMethod, req.Path)
-	trans := tukxdw.Transaction{Actor: tukcnst.XDW_ACTOR_CONTENT_CREATOR}
+	var task string
+	trans := tukxdw.Transaction{}
 	for key, value := range req.QueryStringParameters {
 		log.Printf("    %s: %s\n", key, value)
 		switch key {
+		case tukcnst.TASK:
+			task = value
 		case tukcnst.TUK_EVENT_QUERY_PARAM_PATHWAY:
 			trans.Pathway = value
 		case tukcnst.TUK_EVENT_QUERY_PARAM_NHS:
 			trans.NHS_ID = value
 		}
 	}
+	if req.HTTPMethod == http.MethodPost {
+		switch task {
+		case "def":
+			trans.Actor = tukcnst.XDW_ADMIN_REGISTER_DEFINITION
+		case "meta":
+			trans.Actor = tukcnst.XDW_ADMIN_REGISTER_XDS_META
+		}
+		trans.DSUB_BrokerURL = os.Getenv(tukcnst.ENV_DSUB_BROKER_URL)
+		trans.DSUB_ConsumerURL = os.Getenv(tukcnst.ENV_DB_USER)
+		trans.Request = []byte(req.Body)
+		tukxdw.Execute(&trans)
+		if task == "meta" {
+			return queryResponse(http.StatusOK, "", tukcnst.TEXT_PLAIN)
+		}
+	}
+	trans.Actor = tukcnst.XDW_ACTOR_CONTENT_CREATOR
 	if err = tukxdw.Execute(&trans); err == nil {
 		var wfs []byte
 		if wfs, err = json.MarshalIndent(trans.XDWDocument, "", "  "); err == nil {
